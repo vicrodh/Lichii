@@ -1,0 +1,72 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 31, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "deck-common",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF",
+        "YUZU_TESTS": "OFF",
+        "ENABLE_QT": "ON",
+        "YUZU_CMD": "ON",
+        "YUZU_ROOM": "OFF",
+        "YUZU_ROOM_STANDALONE": "OFF",
+        "YUZU_USE_BUNDLED_QT": "OFF",
+        "YUZU_USE_BUNDLED_SDL3": "ON",
+        "VulkanHeaders_FORCE_BUNDLED": "ON",
+        "VulkanUtilityLibraries_FORCE_BUNDLED": "ON",
+        "ENABLE_UPDATE_CHECKER": "OFF",
+        "USE_DISCORD_PRESENCE": "OFF",
+        "ENABLE_LSFG": "ON",
+        "CMAKE_EXE_LINKER_FLAGS": "-fuse-ld=lld -Wl,--thinlto-jobs=2",
+        "CMAKE_SHARED_LINKER_FLAGS": "-fuse-ld=lld",
+        "CMAKE_MODULE_LINKER_FLAGS": "-fuse-ld=lld"
+      }
+    },
+    {
+      "name": "steam-deck-baseline",
+      "displayName": "Generic Clang comparison build",
+      "inherits": "deck-common",
+      "cacheVariables": {
+        "YUZU_BUILD_PRESET": "generic",
+        "ENABLE_LTO": "OFF",
+        "LICHII_BUILD_PLATFORM": "linux-x86_64-deck-baseline"
+      }
+    },
+    {
+      "name": "steam-deck",
+      "displayName": "Steam Deck Zen 2 + ThinLTO",
+      "inherits": "deck-common",
+      "cacheVariables": {
+        "YUZU_BUILD_PRESET": "zen2",
+        "ENABLE_LTO": "ON",
+        "LICHII_BUILD_PLATFORM": "linux-x86_64-steam-deck"
+      }
+    },
+    {
+      "name": "steam-deck-train",
+      "displayName": "Steam Deck instrumented PGO training build",
+      "inherits": "steam-deck",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "-fprofile-generate -fprofile-update=atomic",
+        "CMAKE_CXX_FLAGS": "-fprofile-generate -fprofile-update=atomic",
+        "CMAKE_EXE_LINKER_FLAGS": "-fuse-ld=lld -Wl,--thinlto-jobs=2 -fprofile-generate",
+        "LICHII_BUILD_PLATFORM": "linux-x86_64-steam-deck-train"
+      }
+    },
+    {
+      "name": "steam-deck-pgo",
+      "displayName": "Steam Deck using Ocarina Linux training data",
+      "inherits": "steam-deck",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "-fprofile-use=${sourceDir}/steam-deck-oot.profdata -Wno-error=profile-instr-unprofiled -Wno-error=profile-instr-out-of-date",
+        "CMAKE_CXX_FLAGS": "-fprofile-use=${sourceDir}/steam-deck-oot.profdata -Wno-error=profile-instr-unprofiled -Wno-error=profile-instr-out-of-date",
+        "LICHII_BUILD_PLATFORM": "linux-x86_64-steam-deck-pgo"
+      }
+    }
+  ]
+}

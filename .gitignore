@@ -67,3 +67,7 @@ vulkansdk*.exe
 
 # Build-time generated external sources
 externals/generated
+
+# Steam Deck build packages and unmerged instrumentation counters
+/dist/steam-deck/
+*.profraw

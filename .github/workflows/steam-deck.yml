@@ -1,0 +1,139 @@
+name: Steam Deck Ocarina
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: compare builds, collect training data, or use the trained Linux profile
+        type: choice
+        options: [compare, train, pgo]
+        default: compare
+  push:
+    branches: [steam-deck-oot]
+    paths:
+      - src/**
+      - CMakeLists.txt
+      - CMakePresets.json
+      - CMakeModules/**
+      - externals/**
+      - cpmfile.json
+      - dist/**
+      - tools/steam-deck/**
+      - steam-deck-oot.profdata
+      - .github/workflows/steam-deck.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: steam-deck-${{ github.ref }}-${{ inputs.mode || 'compare' }}
+  cancel-in-progress: true
+
+env:
+  LLVM_VERSION: '22'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - id: matrix
+        env:
+          MODE: ${{ inputs.mode || 'compare' }}
+        run: |
+          case "$MODE" in
+            compare) value='["steam-deck-baseline","steam-deck"]' ;;
+            train) value='["steam-deck-train"]' ;;
+            pgo) value='["steam-deck","steam-deck-pgo"]' ;;
+            *) exit 2 ;;
+          esac
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      CC: clang-22
+      CXX: clang++-22
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPILERCHECK: content
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: Check trained profile
+        if: matrix.preset == 'steam-deck-pgo'
+        run: test -s steam-deck-oot.profdata
+
+      - name: Install build dependencies and LLVM
+        run: |
+          set -euo pipefail
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key |
+            sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb https://apt.llvm.org/noble/ llvm-toolchain-noble-$LLVM_VERSION main" |
+            sudo tee /etc/apt/sources.list.d/llvm.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            "clang-$LLVM_VERSION" "lld-$LLVM_VERSION" "llvm-$LLVM_VERSION" "libclang-rt-$LLVM_VERSION-dev" \
+            autoconf automake gcc g++ git glslang-tools libglu1-mesa-dev \
+            libpulse-dev libtool libudev-dev libxkbcommon-x11-0 mesa-common-dev nasm \
+            ninja-build qt6-base-private-dev qt6-charts-dev qt6-tools-dev \
+            libavfilter-dev libavcodec-dev libswscale-dev pkg-config zlib1g-dev \
+            libva-dev libvdpau-dev spirv-tools spirv-headers libusb-1.0-0-dev \
+            libboost-dev libboost-fiber-dev libboost-context-dev libopus-dev libasound2-dev \
+            ccache pipx libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
+          pipx install cmake==4.4.4
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "/usr/lib/llvm-$LLVM_VERSION/bin" >> "$GITHUB_PATH"
+
+      - name: Install Qt 6.8.3
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06
+        with:
+          version: '6.8.3'
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          modules: qtcharts
+          cache: true
+
+      - name: Cache compiler objects and dependencies
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: |
+            .cache/cpm
+            .ccache
+          key: deck-llvm22-${{ matrix.preset }}-${{ hashFiles('cpmfile.json', 'steam-deck-oot.profdata') }}-${{ github.sha }}
+          restore-keys: |
+            deck-llvm22-${{ matrix.preset }}-${{ hashFiles('cpmfile.json', 'steam-deck-oot.profdata') }}-
+
+      - name: Build
+        env:
+          PRESET: ${{ matrix.preset }}
+        run: |
+          bash tools/steam-deck/build.sh "$PRESET" \
+            "-DCMAKE_PREFIX_PATH=$QT_ROOT_DIR" -DUSE_CCACHE=ON \
+            "-DLICHII_BUILD_TAG=deck-${GITHUB_RUN_NUMBER}"
+
+      - name: Package AppImage
+        env:
+          PRESET: ${{ matrix.preset }}
+        run: bash tools/steam-deck/package.sh "$PRESET"
+
+      - name: Upload AppImage and training tools
+        uses: actions/upload-artifact@v7
+        with:
+          name: lichii-${{ matrix.preset }}-x86_64
+          path: dist/steam-deck/lichii-${{ matrix.preset }}-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
