@@ -703,9 +703,10 @@ SDLDriver::SDLDriver(std::string input_engine_) : InputEngine(std::move(input_en
     }
 
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_SWITCH_PLAYER_LED, "1");
-    // Disable hidapi driver for xbox. Already default on Windows, this causes conflict with native
-    // driver on Linux.
+    // Keep SDL's default on Linux so Bluetooth Xbox controllers can use HIDAPI.
+#ifndef __linux__
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_XBOX, "0");
+#endif
 
     // If the frontend is going to manage the event loop, then we don't start one here
     start_thread = SDL_WasInit(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD) == 0;
